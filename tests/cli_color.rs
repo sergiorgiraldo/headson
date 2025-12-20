@@ -1,12 +1,16 @@
+mod common;
+
 #[test]
 fn color_and_no_color_flags_conflict() {
-    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("hson");
-    let assert = cmd
-        .args(["--color", "--no-color", "-c", "10", "-f", "json"]) // no input; parse-only
-        .assert();
-    let ok = assert.get_output().status.success();
-    let err = String::from_utf8_lossy(&assert.get_output().stderr);
-    assert!(!ok, "cli should fail on color flag conflict");
+    let out = common::run_cli(
+        &["--color", "--no-color", "-c", "10", "-f", "json"], // no input; parse-only
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "cli should fail on color flag conflict"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.to_ascii_lowercase().contains("cannot be used with")
             || err.to_ascii_lowercase().contains("conflict"),
@@ -19,13 +23,10 @@ fn color_and_no_color_flags_parse_and_run() {
     // Provide minimal JSON via stdin so the command runs.
     let input = b"{}";
     for flag in ["--color", "--no-color"] {
-        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("hson");
-        let assert = cmd
-            .args([flag, "-c", "10", "-f", "json"]) // simple json output
-            .write_stdin(input.as_slice())
-            .assert()
-            .success();
-        let out = String::from_utf8_lossy(&assert.get_output().stdout);
-        assert!(!out.trim().is_empty());
+        let out =
+            common::run_cli(&[flag, "-c", "10", "-f", "json"], Some(input));
+        assert!(out.status.success(), "cli should succeed for flag {flag}");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(!stdout.trim().is_empty());
     }
 }
