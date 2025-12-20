@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgAction, Parser, ValueEnum};
+use clap_complete::Shell;
 
 /// Top-level CLI flags and enums.
 #[derive(Parser, Debug)]
@@ -186,6 +187,13 @@ pub struct Cli {
         help = "When using --grep, control fileset inclusion: matching (default) | all"
     )]
     pub grep_show: GrepShowArg,
+    #[arg(
+        long = "completions",
+        value_name = "SHELL",
+        value_enum,
+        help = "Print shell completions for the given shell"
+    )]
+    pub completions: Option<Shell>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -298,4 +306,18 @@ pub(crate) fn map_grep_show(show: GrepShowArg) -> headson::GrepShow {
         GrepShowArg::Matching => headson::GrepShow::Matching,
         GrepShowArg::All => headson::GrepShow::All,
     }
+}
+
+/// See also
+/// <https://github.com/clap-rs/clap/blob/f65d421607ba16c3175ffe76a20820f123b6c4cb/clap_complete/examples/completion-derive.rs#L69>.
+pub fn print_completions<G: clap_complete::Generator>(
+    generator: G,
+    cmd: &mut clap::Command,
+) {
+    clap_complete::generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut std::io::stdout(),
+    );
 }

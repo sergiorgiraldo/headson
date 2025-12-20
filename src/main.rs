@@ -6,12 +6,19 @@ mod cli;
 mod sorting;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use crate::cli::args::Cli;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Some(shell) = cli.completions {
+        eprintln!("generating completions file for {shell:?}");
+        cli::args::print_completions(shell, &mut Cli::command());
+
+        return Ok(());
+    }
 
     let (output, ignore_notices) = crate::cli::run::run(&cli)?;
     println!("{output}");
