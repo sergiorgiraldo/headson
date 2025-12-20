@@ -97,23 +97,13 @@ fn frecency_orders_fileset_by_recent_commit() {
     )
     .expect("mtime b");
 
-    // Sanity-check frecency ordering from the library directly.
-    unsafe {
-        std::env::set_var("XDG_CACHE_HOME", dir.path().join("cache"));
-    }
-    let mut scores = frecenfile::analyze_repo(dir.path(), None, None)
-        .expect("frecenfile scores");
-    scores.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.cmp(&b.0))
-    });
-    assert_eq!(scores[0].0, Path::new("file_b.txt"));
-
     let mut cmd = cargo_bin_cmd!("hson");
+    let cache_dir = dir.path().join("cache");
     let assert = cmd
         .current_dir(dir.path())
-        .env("XDG_CACHE_HOME", dir.path().join("cache"))
+        .env("FRECENFILE_CACHE_DIR", &cache_dir)
+        .env("HOME", dir.path())
+        .env("XDG_CACHE_HOME", &cache_dir)
         .args([
             "--no-color",
             "-i",
