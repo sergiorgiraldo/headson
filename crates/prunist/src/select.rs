@@ -46,12 +46,33 @@ where
     pub budgets: Budgets,
     pub min_k: usize,
     pub must_keep: Option<MustKeep<'a>>,
-    pub _marker: std::marker::PhantomData<Id>,
+    _marker: std::marker::PhantomData<Id>,
+}
+
+impl<'a, Id, E> SelectionConfig<'a, Id, E>
+where
+    Id: Copy,
+    E: SelectionEngine<Id>,
+{
+    pub fn new(
+        engine: &'a E,
+        budgets: Budgets,
+        min_k: usize,
+        must_keep: Option<MustKeep<'a>>,
+    ) -> Self {
+        Self {
+            engine,
+            budgets,
+            min_k,
+            must_keep,
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct SelectionOutcome<Id: Copy> {
-    pub k: Option<usize>,
+    pub top_k: Option<usize>,
     pub inclusion_flags: Vec<u32>,
     pub render_set_id: u32,
     pub selection_order: Option<Vec<Id>>,
@@ -241,7 +262,7 @@ pub fn select_best_k<Id: Copy, E: SelectionEngine<Id>>(
         && b.cap == 0
     {
         return SelectionOutcome {
-            k: Some(0),
+            top_k: Some(0),
             inclusion_flags: search_state.inclusion_flags,
             render_set_id: search_state.render_set_id,
             selection_order: prep.selection_order,
@@ -268,7 +289,7 @@ pub fn select_best_k<Id: Copy, E: SelectionEngine<Id>>(
         },
     );
     SelectionOutcome {
-        k: search_state.best_k,
+        top_k: search_state.best_k,
         inclusion_flags: search_state.inclusion_flags,
         render_set_id: search_state.render_set_id,
         selection_order: prep.selection_order,
@@ -308,4 +329,221 @@ fn fits_per_slot_cap(
         };
         charged <= cap.cap
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    #[derive(Clone)]
+    struct FakeEngine {
+        total: usize,
+        order: Vec<usize>,
+        slot_count: Option<usize>,
+        slot_map: Option<Vec<usize>>,
+    }
+
+    impl FakeEngine {
+        fn new(total: usize) -> Self {
+            Self {
+                total,
+                order: (0..total).collect(),
+                slot_count: None,
+                slot_map: None,
+            }
+        }
+
+        fn with_slots(
+            mut self,
+            slot_count: usize,
+            slot_map: Vec<usize>,
+        ) -> Self {
+            self.slot_count = Some(slot_count);
+            self.slot_map = Some(slot_map);
+            self
+        }
+    }
+
+    impl SelectionEngine<usize> for FakeEngine {
+        fn total_nodes(&self) -> usize {
+            self.total
+        }
+
+        fn priority_order(&self) -> &[usize] {
+            &self.order
+        }
+
+        fn selection_order_for_slots(&self) -> Option<Vec<usize>> {
+            let slot_count = self.slot_count?;
+            let slot_map = self.slot_map.as_ref()?;
+            let mut buckets: Vec<VecDeque<usize>> =
+                vec![VecDeque::new(); slot_count];
+            let mut unslotted = Vec::new();
+            for &id in &self.order {
+                if let Some(slot) = slot_map.get(id).copied()
+                    && let Some(bucket) = buckets.get_mut(slot)
+                {
+                    bucket.push_back(id);
+                    continue;
+                }
+                unslotted.push(id);
+            }
+            let mut out = Vec::with_capacity(self.order.len());
+            let mut cursor = 0usize;
+            let mut remaining: usize = buckets.iter().map(VecDeque::len).sum();
+            while remaining > 0 {
+                let slot = cursor % slot_count;
+                if let Some(bucket) = buckets.get_mut(slot)
+                    && let Some(node) = bucket.pop_front()
+                {
+                    out.push(node);
+                    remaining = remaining.saturating_sub(1);
+                }
+                cursor = cursor.saturating_add(1);
+            }
+            out.extend(unslotted);
+            Some(out)
+        }
+
+        fn slot_count(&self) -> Option<usize> {
+            self.slot_count
+        }
+
+        fn mark_top_k_and_ancestors(
+            &self,
+            order: &[usize],
+            k: usize,
+            flags: &mut [u32],
+            render_id: u32,
+        ) {
+            for idx in order.iter().take(k) {
+                flags[*idx] = render_id;
+            }
+        }
+
+        fn include_must_keep(
+            &self,
+            flags: &mut [u32],
+            render_id: u32,
+            must_keep: &[bool],
+        ) {
+            for (idx, keep) in must_keep.iter().enumerate() {
+                if *keep {
+                    flags[idx] = render_id;
+                }
+            }
+        }
+
+        fn measure(
+            &self,
+            flags: &[u32],
+            render_id: u32,
+            _measure_chars: bool,
+        ) -> (OutputStats, Option<Vec<OutputStats>>) {
+            let mut total = OutputStats {
+                bytes: 0,
+                chars: 0,
+                lines: 0,
+            };
+            let mut per_slot = self.slot_count.map(|n| {
+                vec![
+                    OutputStats {
+                        bytes: 0,
+                        chars: 0,
+                        lines: 0
+                    };
+                    n
+                ]
+            });
+            for (idx, flag) in flags.iter().enumerate() {
+                if *flag != render_id {
+                    continue;
+                }
+                total.bytes += 1;
+                total.chars += 1;
+                total.lines += 1;
+                if let Some(map) = self.slot_map.as_ref()
+                    && let Some(stats) = per_slot.as_mut()
+                {
+                    let slot = map[idx];
+                    if let Some(s) = stats.get_mut(slot) {
+                        s.bytes += 1;
+                        s.chars += 1;
+                        s.lines += 1;
+                    }
+                }
+            }
+            (total, per_slot)
+        }
+    }
+
+    #[test]
+    fn picks_largest_k_under_global_cap() {
+        let engine = FakeEngine::new(5);
+        let cfg = SelectionConfig::new(
+            &engine,
+            Budgets {
+                global: Some(Budget {
+                    kind: BudgetKind::Bytes,
+                    cap: 3,
+                }),
+                per_slot: None,
+            },
+            1,
+            None,
+        );
+        let out = select_best_k(cfg);
+        assert_eq!(out.top_k, Some(3));
+    }
+
+    #[test]
+    fn respects_per_slot_caps() {
+        let engine = FakeEngine::new(4).with_slots(2, vec![0, 0, 1, 1]);
+        let cfg = SelectionConfig::new(
+            &engine,
+            Budgets {
+                global: None,
+                per_slot: Some(Budget {
+                    kind: BudgetKind::Bytes,
+                    cap: 1,
+                }),
+            },
+            1,
+            None,
+        );
+        let out = select_best_k(cfg);
+        assert_eq!(out.top_k, Some(2));
+    }
+
+    #[test]
+    fn must_keep_budget_applies_to_extra_nodes() {
+        let engine = FakeEngine::new(4);
+        let must_keep_flags = vec![true, true, false, false];
+        let mk_stats = MustKeepStats {
+            total: OutputStats {
+                bytes: 2,
+                chars: 2,
+                lines: 2,
+            },
+            per_slot: None,
+        };
+        let cfg = SelectionConfig::new(
+            &engine,
+            Budgets {
+                global: Some(Budget {
+                    kind: BudgetKind::Lines,
+                    cap: 1,
+                }),
+                per_slot: None,
+            },
+            1,
+            Some(MustKeep {
+                flags: &must_keep_flags,
+                stats: mk_stats,
+            }),
+        );
+        let out = select_best_k(cfg);
+        assert_eq!(out.top_k, Some(3));
+    }
 }
