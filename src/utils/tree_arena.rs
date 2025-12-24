@@ -37,6 +37,8 @@ pub struct JsonTreeNode {
     pub arr_indices_len: usize,
     pub array_bias_override: Option<ArrayBias>,
     pub prefers_parent_line: bool,
+    // For filesets: marks entries that should render headers only (empty body).
+    pub fileset_suppressed: bool,
 }
 
 impl Default for JsonTreeNode {
@@ -55,6 +57,7 @@ impl Default for JsonTreeNode {
             arr_indices_len: 0,
             array_bias_override: None,
             prefers_parent_line: false,
+            fileset_suppressed: false,
         }
     }
 }

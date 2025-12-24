@@ -46,7 +46,8 @@ fn yaml_coloring_applies_and_strips_to_plain() {
         &grep,
         budgets,
     )
-    .expect("plain yaml");
+    .expect("plain yaml")
+    .text;
     let colored = headson::headson(
         headson::InputKind::Yaml(input),
         &cfg_color,
@@ -54,7 +55,8 @@ fn yaml_coloring_applies_and_strips_to_plain() {
         &grep,
         budgets,
     )
-    .expect("colored yaml");
+    .expect("colored yaml")
+    .text;
 
     // Contains ANSI SGR and specific roles (blue for keys, green for strings).
     assert!(

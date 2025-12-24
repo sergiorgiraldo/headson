@@ -89,7 +89,8 @@ environments:
             per_slot: None,
         },
     )
-    .expect("render fileset");
+    .expect("render fileset")
+    .text;
 
     assert_snapshot!("fileset_multi_format_snapshot", out);
 }

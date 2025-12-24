@@ -96,7 +96,8 @@ fn colored_vs_plain_match_after_stripping_under_char_budget() {
         &grep,
         budgets,
     )
-    .expect("plain render under char budget");
+    .expect("plain render under char budget")
+    .text;
     let colored = headson::headson(
         headson::InputKind::Json(input.to_vec()),
         &cfg_color,
@@ -104,7 +105,8 @@ fn colored_vs_plain_match_after_stripping_under_char_budget() {
         &grep,
         budgets,
     )
-    .expect("colored render under char budget");
+    .expect("colored render under char budget")
+    .text;
 
     // Ensure char budget enforced on uncolored output
     assert!(plain.chars().count() <= budgets.global.unwrap().cap);

@@ -814,17 +814,25 @@ pub fn build_order(
         }
     }
 
-    let fileset_children = if arena.is_fileset {
+    let fileset_render_slots = if arena.is_fileset {
         let root = &arena.nodes[arena.root_id];
         let mut ids: Vec<NodeId> = Vec::with_capacity(root.children_len);
+        let mut slots: Vec<FilesetRenderSlot> =
+            Vec::with_capacity(root.children_len);
         for idx in 0..root.children_len {
             let child_arena_id = arena.children[root.children_start + idx];
             if let Some(Some(pq_id)) = arena_to_pq.get(child_arena_id) {
-                ids.push(NodeId(*pq_id));
+                let suppressed = arena
+                    .nodes
+                    .get(child_arena_id)
+                    .is_some_and(|node| node.fileset_suppressed);
+                let id = NodeId(*pq_id);
+                ids.push(id);
+                slots.push(FilesetRenderSlot { id, suppressed });
             }
         }
         interleave_fileset_priority(&mut order, &node_slots, &ids);
-        Some(ids)
+        Some(slots)
     } else {
         None
     };
@@ -847,7 +855,7 @@ pub fn build_order(
         total_nodes: total,
         object_type,
         code_lines,
-        fileset_children,
+        fileset_render_slots,
     })
 }
 

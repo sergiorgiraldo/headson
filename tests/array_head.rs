@@ -96,7 +96,8 @@ fn array_head_json_contains_first_k_values() {
             per_slot: None,
         },
     )
-    .expect("render");
+    .expect("render")
+    .text;
     let v: serde_json::Value = serde_json::from_str(&out).expect("json parse");
     let arr = v.as_array().expect("root array");
     assert_eq!(arr.len(), 15, "kept exactly cap items");

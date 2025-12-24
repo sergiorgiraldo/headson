@@ -50,7 +50,8 @@ fn headson_many_text_smoke() {
             per_slot: None,
         },
     )
-    .unwrap();
+    .unwrap()
+    .text;
     assert!(out.contains("a.txt"));
     assert!(out.contains("b.log"));
     assert!(out.contains("one\n"));

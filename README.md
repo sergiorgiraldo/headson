@@ -170,7 +170,7 @@ Notes:
 - In `--format auto`, each file uses its own best format: JSON family for `.json`, YAML for `.yaml`/`.yml`.
   - Unknown extensions are treated as Text (raw lines) — safe for logs and `.txt` files.
   - `--global-bytes` may truncate or omit entire files to respect the total budget.
-  - Directories are ignored unless `--recursive` is set; binary files are ignored with a notice. Glob/recursive expansion respects `.gitignore` plus `.ignore`/`.rgignore`. Stdin reads the stream as‑is.
+  - Directories are ignored unless `--recursive` is set; binary files are ignored with a warning. Glob/recursive expansion respects `.gitignore` plus `.ignore`/`.rgignore`. Stdin reads the stream as‑is.
   - Head vs Tail sampling: these options bias which part of arrays are kept before rendering; strict JSON stays unannotated.
 
 #### Multi-file mode
@@ -181,6 +181,7 @@ Notes:
 - Sorting: inputs are ordered so frequently and recently touched files appear first (git metadata when available, mtime fallback). Pass `--no-sort` to preserve the order you provided and skip repo scanning.
 - Headers: multi-file output gets `==>` headers when newlines are enabled; hide them with `--no-header`. Compact and single-line modes omit headers automatically.
 - Formats: in `--format auto`, each file picks JSON/YAML/Text based on extension; unknowns fall back to Text so mixed inputs “just work.”
+- Parse failures: in multi-file mode, JSON/YAML parse failures are reported on stderr and the file renders as a header/tree entry with an empty body (when headers/tree entries are visible). In compact/no‑newline output, fileset rendering falls back to a plain object, so parse failures may appear as `{}` like valid empty objects.
 - Per-file caps: omission markers count toward per-file line budgets; a per-file line cap of zero suppresses the file entirely, even when headers are counted.
 
 #### Grep mode
@@ -191,7 +192,7 @@ Use `--grep <REGEX>` to guarantee inclusion of values/keys/lines matching the re
 - Colors: only the matching text is highlighted; syntax colors are suppressed in grep mode. Disable color entirely with `--no-color`.
 - Weak grep: `--weak-grep <REGEX>` biases priority toward matches but does not guarantee inclusion, expand budgets, or filter files. Budgets stay exact and matches can still be pruned if they do not fit.
 - Multi-file mode (strong `--grep` only):
-  - Default (`--grep-show=matching`): files without matches are dropped from the render and summary. If no files match at all, the output is empty and the CLI prints a notice to stderr.
+  - Default (`--grep-show=matching`): files without matches are dropped from the render and summary. If no files match at all, the output is empty and the CLI prints a warning to stderr.
   - `--grep-show=all`: keep non-matching files in the render; only matching files are highlighted.
   - Headers respect `--no-header` as usual.
 - Mutual exclusion: `--grep-show` requires `--grep` and cannot be used with `--weak-grep`; `--weak-grep` cannot be combined with `--grep`.

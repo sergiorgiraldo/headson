@@ -45,6 +45,12 @@ pub use serialization::types::{
     ColorMode, ColorStrategy, OutputTemplate, RenderConfig, Style,
 };
 
+#[derive(Debug)]
+pub struct RenderOutput {
+    pub text: String,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum TextMode {
     Plain,
@@ -64,19 +70,23 @@ pub fn headson(
     priority_cfg: &PriorityConfig,
     grep: &GrepConfig,
     budgets: Budgets,
-) -> Result<String> {
+) -> Result<RenderOutput> {
     let mut prio = *priority_cfg;
     if grep.regex.is_some() && !grep.weak {
         // Avoid sampling away potential matches in strong grep mode.
         prio.array_max_items = usize::MAX;
     }
-    let arena = crate::ingest::ingest_into_arena(input, &prio)?;
+    let crate::ingest::IngestOutput { arena, warnings } =
+        crate::ingest::ingest_into_arena(input, &prio)?;
     let mut order_build = order::build_order(&arena, &prio)?;
-
-    Ok(find_largest_render_under_budgets(
+    let out = find_largest_render_under_budgets(
         &mut order_build,
         config,
         grep,
         budgets,
-    ))
+    );
+    Ok(RenderOutput {
+        text: out,
+        warnings,
+    })
 }

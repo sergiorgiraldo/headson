@@ -619,14 +619,10 @@ fn build_fileset_summary(
     if order.object_type.get(ROOT_PQ_ID) != Some(&ObjectType::Fileset) {
         return None;
     }
-    let children = order
-        .fileset_children
-        .as_deref()
-        .or_else(|| order.children.get(ROOT_PQ_ID).map(|v| &**v))
-        .unwrap_or_default();
-    let mut out = Vec::new();
+    let children = order.fileset_render_slots().unwrap_or(&[]);
+    let mut out = Vec::with_capacity(children.len());
     for child in children {
-        let cid = child.0;
+        let cid = child.id.0;
         let key = order.nodes[cid].key_in_object().unwrap_or("").to_string();
         let included_root = inclusion_flags
             .get(cid)

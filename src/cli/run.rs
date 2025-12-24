@@ -17,7 +17,7 @@ use crate::sorting::sort_paths_for_fileset;
 
 type InputEntry = (String, Vec<u8>);
 type InputEntries = Vec<InputEntry>;
-pub(crate) type IgnoreNotices = Vec<String>;
+pub(crate) type CliWarnings = Vec<String>;
 
 fn build_effective_configs(
     cli: &Cli,
@@ -38,7 +38,7 @@ fn needs_fileset(cli: &Cli, inputs_len: usize) -> bool {
     inputs_len > 1 || cli.tree
 }
 
-pub(crate) fn run(cli: &Cli) -> Result<(String, IgnoreNotices)> {
+pub(crate) fn run(cli: &Cli) -> Result<(String, CliWarnings)> {
     budget::validate(cli)?;
     let mut render_cfg = get_render_config_from(cli);
     let grep_cfg = headson::build_grep_config(
@@ -58,7 +58,7 @@ pub(crate) fn run(cli: &Cli) -> Result<(String, IgnoreNotices)> {
         if cli.tree {
             bail!("--tree requires file inputs; stdin mode is not supported");
         }
-        Ok((run_from_stdin(cli, &render_cfg, &grep_cfg)?, Vec::new()))
+        Ok(run_from_stdin(cli, &render_cfg, &grep_cfg)?)
     } else {
         run_from_paths(cli, &render_cfg, &grep_cfg, &resolved_inputs)
     }
@@ -71,10 +71,14 @@ fn detect_fileset_input_kind(name: &str) -> headson::FilesetInputKind {
     } else if lower.ends_with(".json") {
         headson::FilesetInputKind::Json
     } else {
-        let atomic = headson::extensions::is_code_like_name(&lower);
-        headson::FilesetInputKind::Text {
-            atomic_lines: atomic,
-        }
+        fileset_text_kind(&lower)
+    }
+}
+
+fn fileset_text_kind(name: &str) -> headson::FilesetInputKind {
+    let atomic = headson::extensions::is_code_like_name(name);
+    headson::FilesetInputKind::Text {
+        atomic_lines: atomic,
     }
 }
 
@@ -82,21 +86,22 @@ fn run_from_stdin(
     cli: &Cli,
     render_cfg: &headson::RenderConfig,
     grep_cfg: &headson::GrepConfig,
-) -> Result<String> {
+) -> Result<(String, CliWarnings)> {
     let input_bytes = read_stdin()?;
     let input_count = 1usize;
     let mut cfg = render_cfg.clone();
     cfg.template = resolve_effective_template_for_stdin(cli.format, cfg.style);
     let (cfg, prio, budgets) = build_effective_configs(cli, cfg, input_count);
     let chosen_input = cli.input_format.unwrap_or(InputFormat::Json);
-    render_single_input(
+    let (out, warnings) = render_single_input(
         chosen_input,
         input_bytes,
         &cfg,
         &prio,
         grep_cfg,
         budgets,
-    )
+    )?;
+    Ok((out, warnings))
 }
 
 fn run_from_paths(
@@ -104,7 +109,7 @@ fn run_from_paths(
     render_cfg: &headson::RenderConfig,
     grep_cfg: &headson::GrepConfig,
     inputs: &[PathBuf],
-) -> Result<(String, IgnoreNotices)> {
+) -> Result<(String, CliWarnings)> {
     let sorted_inputs = if needs_fileset(cli, inputs.len()) && !cli.no_sort {
         sort_paths_for_fileset(inputs)
     } else {
@@ -113,7 +118,7 @@ fn run_from_paths(
     if std::env::var_os("HEADSON_FRECEN_TRACE").is_some() {
         eprintln!("run_from_paths sorted_inputs={sorted_inputs:?}");
     }
-    let (entries, ignored) = ingest_paths(&sorted_inputs)?;
+    let (entries, warnings) = ingest_paths(&sorted_inputs)?;
     if std::env::var_os("HEADSON_FRECEN_TRACE").is_some() {
         eprintln!(
             "run_from_paths ingested={:?}",
@@ -121,12 +126,12 @@ fn run_from_paths(
         );
     }
     if needs_fileset(cli, inputs.len()) {
-        return render_fileset(entries, ignored, cli, render_cfg, grep_cfg);
+        return render_fileset(entries, warnings, cli, render_cfg, grep_cfg);
     }
     if entries.is_empty() {
-        return Ok((String::new(), ignored));
+        return Ok((String::new(), warnings));
     }
-    render_single_entry(entries, ignored, cli, render_cfg, grep_cfg)
+    render_single_entry(entries, warnings, cli, render_cfg, grep_cfg)
 }
 
 fn read_stdin() -> Result<Vec<u8>> {
@@ -172,25 +177,25 @@ fn sniff_then_read_text(path: &Path) -> Result<Option<Vec<u8>>> {
     Ok(Some(buf))
 }
 
-fn ingest_paths(paths: &[PathBuf]) -> Result<(InputEntries, IgnoreNotices)> {
+fn ingest_paths(paths: &[PathBuf]) -> Result<(InputEntries, CliWarnings)> {
     let mut out: InputEntries = Vec::with_capacity(paths.len());
-    let mut ignored: IgnoreNotices = Vec::new();
+    let mut warnings: CliWarnings = Vec::new();
     for path in paths.iter() {
         let display = path.display().to_string();
         if let Ok(meta) = std::fs::metadata(path) {
             if meta.is_dir() {
-                ignored.push(format!("Ignored directory: {display}"));
+                warnings.push(format!("Ignored directory: {display}"));
                 continue;
             }
         }
         if let Some(bytes) = sniff_then_read_text(path)? {
             out.push((display, bytes))
         } else {
-            ignored.push(format!("Ignored binary file: {display}"));
+            warnings.push(format!("Ignored binary file: {display}"));
             continue;
         }
     }
-    Ok((out, ignored))
+    Ok((out, warnings))
 }
 
 fn resolve_inputs(cli: &Cli) -> Result<Vec<PathBuf>> {
@@ -451,7 +456,7 @@ fn render_single_input(
     prio: &headson::PriorityConfig,
     grep_cfg: &headson::GrepConfig,
     budgets: headson::Budgets,
-) -> Result<String> {
+) -> Result<(String, CliWarnings)> {
     let text_mode = if matches!(cfg.template, headson::OutputTemplate::Code) {
         headson::TextMode::CodeLike
     } else {
@@ -483,6 +488,7 @@ fn render_single_input(
             budgets,
         ),
     }
+    .map(|out| (out.text, out.warnings))
 }
 
 fn resolve_effective_template_for_stdin(
@@ -522,11 +528,11 @@ fn resolve_effective_template_for_single(
 
 fn render_fileset(
     entries: InputEntries,
-    mut notices: IgnoreNotices,
+    mut warnings: CliWarnings,
     cli: &Cli,
     render_cfg: &headson::RenderConfig,
     grep_cfg: &headson::GrepConfig,
-) -> Result<(String, IgnoreNotices)> {
+) -> Result<(String, CliWarnings)> {
     if !matches!(cli.format, OutputFormat::Auto) {
         bail!(
             "--format cannot be customized for filesets; remove it or set to auto"
@@ -543,65 +549,88 @@ fn render_fileset(
             headson::FilesetInput { name, bytes, kind }
         })
         .collect();
-    let out = headson::headson(
+    let headson::RenderOutput {
+        text: out,
+        warnings: fallback_warnings,
+    } = headson::headson(
         headson::InputKind::Fileset(files),
         &cfg,
         &prio,
         grep_cfg,
         budgets,
     )?;
+    warnings.extend(fallback_warnings);
     if grep_cfg.regex.is_some()
         && matches!(grep_cfg.show, headson::GrepShow::Matching)
         && !grep_cfg.weak
         && out.trim().is_empty()
     {
-        notices.push("No grep matches found".to_string());
+        warnings.push("No grep matches found".to_string());
     }
-    Ok((out, notices))
+    Ok((out, warnings))
 }
 
 fn render_single_entry(
     mut entries: InputEntries,
-    notices: IgnoreNotices,
+    mut warnings: CliWarnings,
     cli: &Cli,
     render_cfg: &headson::RenderConfig,
     grep_cfg: &headson::GrepConfig,
-) -> Result<(String, IgnoreNotices)> {
+) -> Result<(String, CliWarnings)> {
     let (name, bytes) = entries
         .pop()
         .expect("single-entry render expects one ingested input");
     let lower = name.to_ascii_lowercase();
     let chosen_input = select_input_format(cli, &lower);
-    let mut cfg = render_cfg.clone();
-    cfg.template =
-        resolve_effective_template_for_single(cli.format, cfg.style, &lower);
-    cfg.primary_source_name = Some(name);
-    let (cfg, prio, budgets) = build_effective_configs(cli, cfg, 1usize);
-    let is_auto = matches!(cli.format, OutputFormat::Auto);
-    let mut cfg_for_render = cfg;
-    if let InputFormat::Text = chosen_input {
-        let is_code = headson::extensions::is_code_like_name(
-            cfg_for_render
-                .primary_source_name
-                .as_deref()
-                .unwrap_or_default(),
-        );
-        if is_auto
-            && is_code
-            && matches!(cfg_for_render.template, headson::OutputTemplate::Text)
-        {
-            cfg_for_render.template = headson::OutputTemplate::Code;
-        }
-    }
-    let out = render_single_input(
+    let cfg_for_render = build_single_render_config(
+        cli,
+        render_cfg,
+        &lower,
+        &name,
+        chosen_input,
+    );
+    let (cfg_for_render, prio, budgets) =
+        build_effective_configs(cli, cfg_for_render, 1usize);
+    let (out, mut fallback_warnings) = render_single_input(
         chosen_input,
         bytes,
         &cfg_for_render,
         &prio,
         grep_cfg,
         budgets,
-    )?;
-    Ok((out, notices))
+    )
+    .with_context(|| format!("failed to parse input file: {name}"))?;
+    if !fallback_warnings.is_empty() {
+        warnings.append(&mut fallback_warnings);
+    }
+    Ok((out, warnings))
+}
+
+fn build_single_render_config(
+    cli: &Cli,
+    render_cfg: &headson::RenderConfig,
+    lower_name: &str,
+    source_name: &str,
+    chosen_input: InputFormat,
+) -> headson::RenderConfig {
+    let mut cfg = render_cfg.clone();
+    cfg.template = resolve_effective_template_for_single(
+        cli.format, cfg.style, lower_name,
+    );
+    cfg.primary_source_name = Some(source_name.to_string());
+    if let InputFormat::Text = chosen_input {
+        let is_auto = matches!(cli.format, OutputFormat::Auto);
+        let is_code = headson::extensions::is_code_like_name(
+            cfg.primary_source_name.as_deref().unwrap_or_default(),
+        );
+        if is_auto
+            && is_code
+            && matches!(cfg.template, headson::OutputTemplate::Text)
+        {
+            cfg.template = headson::OutputTemplate::Code;
+        }
+    }
+    cfg
 }
 
 fn select_input_format(cli: &Cli, lower_name: &str) -> InputFormat {
@@ -642,8 +671,9 @@ mod tests {
         let cli =
             Cli::parse_from(["hson", "-i", "text", path.to_str().unwrap()]);
 
-        let (out, notices) = run(&cli).expect("run succeeds with text ingest");
-        assert!(notices.is_empty());
+        let (out, warnings) =
+            run(&cli).expect("run succeeds with text ingest");
+        assert!(warnings.is_empty());
         assert!(
             out.contains("not json"),
             "should treat .json as text when -i text is passed"
@@ -658,9 +688,9 @@ mod tests {
 
         let cli = Cli::parse_from(["hson", path.to_str().unwrap()]);
 
-        let (out, notices) =
+        let (out, warnings) =
             run(&cli).expect("run succeeds with default ingest");
-        assert!(notices.is_empty());
+        assert!(warnings.is_empty());
         assert!(
             out.contains("\"a\"") || out.contains("a"),
             "auto mode should still treat .json as json when -i is absent"

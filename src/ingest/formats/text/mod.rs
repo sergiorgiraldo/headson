@@ -527,7 +527,8 @@ mod tests {
                 per_slot: None,
             },
         )
-        .unwrap();
+        .unwrap()
+        .text;
         assert_eq!(out, "a\nb\nc\n");
     }
 
@@ -598,7 +599,8 @@ mod tests {
                 per_slot: None,
             },
         )
-        .unwrap();
+        .unwrap()
+        .text;
         assert!(out.contains("…\n"));
     }
 

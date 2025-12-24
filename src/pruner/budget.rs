@@ -2,7 +2,7 @@ use super::pruning_context::HeadsonPruningContext;
 use crate::grep::{
     GrepShow, GrepState, compute_grep_state, reorder_priority_with_must_keep,
 };
-use crate::order::{NodeId, ObjectType, ROOT_PQ_ID};
+use crate::order::{NodeId, ObjectType};
 use crate::utils::measure::{OutputStats, count_output_stats};
 use crate::{GrepConfig, PriorityOrder, RenderConfig};
 use prunist::{
@@ -353,14 +353,10 @@ fn filter_fileset_without_matches(
     {
         return;
     }
-    let Some(fileset_children) =
-        order_build.fileset_children.clone().or_else(|| {
-            order_build.children.get(crate::order::ROOT_PQ_ID).cloned()
-        })
-    else {
+    let Some(fileset_slots) = order_build.fileset_render_slots() else {
         return;
     };
-    if fileset_children.is_empty() {
+    if fileset_slots.is_empty() {
         return;
     }
 
@@ -368,7 +364,7 @@ fn filter_fileset_without_matches(
         return;
     };
 
-    let mut keep_slots = vec![false; fileset_children.len()];
+    let mut keep_slots = vec![false; fileset_slots.len()];
     for (idx, keep) in s.must_keep.iter().enumerate() {
         if !*keep {
             continue;
@@ -383,14 +379,27 @@ fn filter_fileset_without_matches(
     if !keep_slots.iter().any(|k| *k) {
         // Fallback: consider fileset children directly in case matches were only
         // recorded on the file root.
-        for (slot, child) in fileset_children.iter().enumerate() {
-            if s.must_keep.get(child.0).copied().unwrap_or(false) {
+        for (slot, child) in fileset_slots.iter().enumerate() {
+            if s.must_keep.get(child.id.0).copied().unwrap_or(false) {
                 if let Some(flag) = keep_slots.get_mut(slot) {
                     *flag = true;
                 }
             }
         }
     }
+
+    let filtered_slots = if keep_fileset_children_for_tree {
+        None
+    } else {
+        let mut filtered_slots: Vec<crate::order::FilesetRenderSlot> =
+            Vec::new();
+        for (slot, child) in fileset_slots.iter().enumerate() {
+            if keep_slots.get(slot).copied().unwrap_or(false) {
+                filtered_slots.push(*child);
+            }
+        }
+        Some(filtered_slots)
+    };
 
     order_build.by_priority.retain(|node| {
         match slot_map.get(node.0).copied().flatten() {
@@ -399,18 +408,13 @@ fn filter_fileset_without_matches(
         }
     });
 
-    if !keep_fileset_children_for_tree {
-        let mut filtered_children: Vec<NodeId> = Vec::new();
-        for (slot, child) in fileset_children.iter().enumerate() {
-            if keep_slots.get(slot).copied().unwrap_or(false) {
-                filtered_children.push(*child);
-            }
-        }
-        order_build.fileset_children = Some(filtered_children.clone());
+    if let Some(filtered_slots) = filtered_slots {
+        let filtered_len = filtered_slots.len();
+        order_build.fileset_render_slots = Some(filtered_slots);
         if let Some(metrics) =
             order_build.metrics.get_mut(crate::order::ROOT_PQ_ID)
         {
-            metrics.object_len = Some(filtered_children.len());
+            metrics.object_len = Some(filtered_len);
         }
     }
 
@@ -438,26 +442,19 @@ pub(crate) fn compute_fileset_slot_map(
     {
         return None;
     }
-    let children = order_build.fileset_children.as_deref().or_else(|| {
-        order_build
-            .children
-            .get(crate::order::ROOT_PQ_ID)
-            .map(|v| &**v)
-    })?;
+    let children = order_build.fileset_render_slots()?;
     if children.is_empty() {
         return None;
     }
 
     let mut slots: Vec<Option<usize>> = vec![None; order_build.total_nodes];
     for (slot, child) in children.iter().enumerate() {
-        let mut stack = vec![child.0];
+        let mut stack = vec![child.id.0];
         while let Some(node_idx) = stack.pop() {
-            if slots.get(node_idx).is_some_and(Option::is_some) {
+            if slots[node_idx].is_some() {
                 continue;
             }
-            if let Some(slot_ref) = slots.get_mut(node_idx) {
-                *slot_ref = Some(slot);
-            }
+            slots[node_idx] = Some(slot);
             if let Some(kids) = order_build.children.get(node_idx) {
                 stack.extend(kids.iter().map(|k| k.0));
             }
@@ -509,10 +506,7 @@ impl FilesetSlots {
 }
 
 fn fileset_slot_names(order_build: &PriorityOrder) -> Option<Vec<String>> {
-    let children = order_build
-        .fileset_children
-        .as_deref()
-        .or_else(|| order_build.children.get(ROOT_PQ_ID).map(|v| &**v))?;
+    let children = order_build.fileset_render_slots()?;
     if children.is_empty() {
         return None;
     }
@@ -520,7 +514,7 @@ fn fileset_slot_names(order_build: &PriorityOrder) -> Option<Vec<String>> {
     for child in children {
         let name = order_build
             .nodes
-            .get(child.0)
+            .get(child.id.0)
             .and_then(|n| n.key_in_object())
             .unwrap_or_default()
             .to_string();
@@ -822,11 +816,7 @@ fn ensure_fileset_headers_for_empty_slots(
     if slots.count == 0 {
         return;
     }
-    let children = order_build
-        .fileset_children
-        .as_deref()
-        .or_else(|| order_build.children.get(ROOT_PQ_ID).map(|v| &**v));
-    let Some(fileset_children) = children else {
+    let Some(fileset_children) = order_build.fileset_render_slots() else {
         return;
     };
     if inclusion_flags.len() < order_build.total_nodes {
@@ -862,7 +852,7 @@ fn ensure_fileset_headers_for_empty_slots(
         if let Some(file_node) = fileset_children.get(slot_idx) {
             crate::utils::graph::mark_node_and_ancestors(
                 order_build,
-                *file_node,
+                file_node.id,
                 inclusion_flags,
                 render_id,
             );

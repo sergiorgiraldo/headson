@@ -745,7 +745,8 @@ fn grep_highlights_for_library_calls_without_extra_config() {
         &grep,
         budgets,
     )
-    .expect("render");
+    .expect("render")
+    .text;
     assert!(
         out.contains("\u{001b}[31mneedle\u{001b}[39m"),
         "library calls should auto-wire grep highlights when color is on: {out:?}"

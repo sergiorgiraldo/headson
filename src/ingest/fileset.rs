@@ -1,10 +1,9 @@
-use anyhow::Result;
-
 use crate::order::NodeKind;
 use crate::utils::tree_arena::{JsonTreeArena, JsonTreeNode};
 
+use super::IngestOutput;
 use super::formats::{
-    json::build_json_tree_arena_from_bytes,
+    json::build_json_tree_arena_from_slice,
     text::{
         build_text_tree_arena_from_bytes,
         build_text_tree_arena_from_bytes_with_mode,
@@ -21,6 +20,13 @@ pub struct FilesetInput {
     pub kind: FilesetInputKind,
 }
 
+#[derive(Debug)]
+pub(crate) struct FilesetEntry {
+    pub name: String,
+    pub arena: JsonTreeArena,
+    pub suppressed: bool,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum FilesetInputKind {
     Json,
@@ -28,37 +34,97 @@ pub enum FilesetInputKind {
     Text { atomic_lines: bool },
 }
 
+/// Parse a fileset and return any parse warnings.
 pub fn parse_fileset_multi(
     inputs: Vec<FilesetInput>,
     cfg: &PriorityConfig,
-) -> Result<JsonTreeArena> {
-    let mut arenas: Vec<(String, JsonTreeArena)> =
-        Vec::with_capacity(inputs.len());
-    for FilesetInput { name, bytes, kind } in inputs {
-        let arena = match kind {
-            FilesetInputKind::Json => {
-                build_json_tree_arena_from_bytes(bytes, cfg)?
-            }
-            FilesetInputKind::Yaml => {
-                build_yaml_tree_arena_from_bytes(bytes, cfg)?
-            }
+) -> IngestOutput {
+    let mut entries: Vec<FilesetEntry> = Vec::with_capacity(inputs.len());
+    let mut warnings: Vec<String> = Vec::new();
+    for FilesetInput {
+        name,
+        mut bytes,
+        kind,
+    } in inputs
+    {
+        let (arena, suppressed) = match kind {
+            FilesetInputKind::Json => parse_or_empty(
+                &name,
+                &mut bytes,
+                cfg,
+                &mut warnings,
+                "JSON",
+                |bytes, cfg| build_json_tree_arena_from_slice(bytes, cfg),
+            ),
+            FilesetInputKind::Yaml => parse_or_empty(
+                &name,
+                &bytes,
+                cfg,
+                &mut warnings,
+                "YAML",
+                |bytes, cfg| build_yaml_tree_arena_from_bytes(bytes, cfg),
+            ),
             FilesetInputKind::Text { atomic_lines } => {
-                if atomic_lines {
-                    build_text_tree_arena_from_bytes_with_mode(
-                        &bytes, cfg, true,
-                    )
-                } else {
-                    build_text_tree_arena_from_bytes(&bytes, cfg)
-                }
+                (parse_text_bytes(&bytes, cfg, atomic_lines), false)
             }
         };
-        arenas.push((name, arena));
+        entries.push(FilesetEntry {
+            name,
+            arena,
+            suppressed,
+        });
     }
-    Ok(build_fileset_root(arenas))
+    IngestOutput {
+        arena: build_fileset_root(entries),
+        warnings,
+    }
+}
+
+fn parse_or_empty<B, F>(
+    name: &str,
+    bytes: B,
+    cfg: &PriorityConfig,
+    warnings: &mut Vec<String>,
+    label: &str,
+    parse: F,
+) -> (JsonTreeArena, bool)
+where
+    F: FnOnce(B, &PriorityConfig) -> anyhow::Result<JsonTreeArena>,
+{
+    match parse(bytes, cfg) {
+        Ok(arena) => (arena, false),
+        Err(err) => {
+            warnings.push(format!("Failed to parse {name} as {label}: {err}"));
+            (empty_object_arena(), true)
+        }
+    }
+}
+
+fn parse_text_bytes(
+    bytes: &[u8],
+    cfg: &PriorityConfig,
+    atomic_lines: bool,
+) -> JsonTreeArena {
+    if atomic_lines {
+        build_text_tree_arena_from_bytes_with_mode(bytes, cfg, true)
+    } else {
+        build_text_tree_arena_from_bytes(bytes, cfg)
+    }
+}
+
+fn empty_object_arena() -> JsonTreeArena {
+    let mut arena = JsonTreeArena::default();
+    arena.nodes.push(JsonTreeNode {
+        kind: NodeKind::Object,
+        object_len: Some(0),
+        ..JsonTreeNode::default()
+    });
+    arena.root_id = 0;
+    arena
 }
 
 pub(crate) fn build_fileset_root(
-    mut items: Vec<(String, JsonTreeArena)>,
+    mut entries: Vec<FilesetEntry>,
 ) -> JsonTreeArena {
     let mut arena = JsonTreeArena {
         root_id: 0,
@@ -70,13 +136,21 @@ pub(crate) fn build_fileset_root(
         ..JsonTreeNode::default()
     });
 
-    let mut root_children: Vec<usize> = Vec::with_capacity(items.len());
-    let mut root_keys: Vec<String> = Vec::with_capacity(items.len());
+    let mut root_children: Vec<usize> = Vec::with_capacity(entries.len());
+    let mut root_keys: Vec<String> = Vec::with_capacity(entries.len());
 
-    for (key, child) in items.drain(..) {
+    for FilesetEntry {
+        name,
+        arena: child,
+        suppressed,
+    } in entries.drain(..)
+    {
         let child_root = append_subtree(&mut arena, child);
+        if let Some(node) = arena.nodes.get_mut(child_root) {
+            node.fileset_suppressed = suppressed;
+        }
         root_children.push(child_root);
-        root_keys.push(key);
+        root_keys.push(name);
     }
 
     let children_start = arena.children.len();
@@ -92,7 +166,6 @@ pub(crate) fn build_fileset_root(
         root.obj_keys_len = root.children_len;
         root.object_len = Some(root.children_len);
     }
-
     arena
 }
 

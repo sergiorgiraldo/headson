@@ -521,7 +521,7 @@ fn force_child_hooks_removed() {
         total_nodes: 3,
         object_type: vec![ObjectType::Object; 3],
         code_lines: HashMap::new(),
-        fileset_children: None,
+        fileset_render_slots: None,
     };
     let mut flags = Vec::new();
     let render_id = 1u32;
@@ -560,7 +560,7 @@ fn fileset_tree_headers_free_keep_slot_stats_on_body_only() {
         ],
         &cfg_prio,
     )
-    .unwrap();
+    .arena;
     let order = build_order(&arena, &cfg_prio).unwrap();
     let mut inclusion_flags = vec![0u32; order.total_nodes];
     prepare_render_set_top_k_and_ancestors(
@@ -644,7 +644,7 @@ fn fileset_tree_headers_free_scaffold_does_not_change_slot_stats() {
         ],
         &cfg_prio,
     )
-    .unwrap();
+    .arena;
     let order = build_order(&arena, &cfg_prio).unwrap();
     let mut inclusion_flags = vec![0u32; order.total_nodes];
     prepare_render_set_top_k_and_ancestors(
@@ -734,7 +734,7 @@ fn fileset_sections_slot_stats_respect_header_budgeting() {
         ],
         &cfg_prio,
     )
-    .unwrap();
+    .arena;
     let order = build_order(&arena, &cfg_prio).unwrap();
     let mut inclusion_flags = vec![0u32; order.total_nodes];
     prepare_render_set_top_k_and_ancestors(
@@ -826,7 +826,7 @@ fn slot_stats_match_render_for_code_and_text() {
         }],
         &cfg_prio,
     )
-    .unwrap();
+    .arena;
     let order = build_order(&arena, &cfg_prio).unwrap();
     let mut inclusion_flags = vec![0u32; order.total_nodes];
     prepare_render_set_top_k_and_ancestors(

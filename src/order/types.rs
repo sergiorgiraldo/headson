@@ -177,9 +177,20 @@ pub struct PriorityOrder {
     pub total_nodes: usize,
     pub object_type: Vec<ObjectType>,
     pub code_lines: HashMap<usize, Arc<Vec<String>>>,
-    // For filesets, preserve the ingest order of top-level children so rendering
-    // can respect pre-sorting heuristics (e.g., frecency).
-    pub fileset_children: Option<Vec<NodeId>>,
+    // For filesets, preserve ingest order and suppression state for render slots.
+    pub fileset_render_slots: Option<Vec<FilesetRenderSlot>>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct FilesetRenderSlot {
+    pub id: NodeId,
+    pub suppressed: bool,
+}
+
+impl PriorityOrder {
+    pub fn fileset_render_slots(&self) -> Option<&[FilesetRenderSlot]> {
+        self.fileset_render_slots.as_deref()
+    }
 }
 
 pub const ROOT_PQ_ID: usize = 0;
