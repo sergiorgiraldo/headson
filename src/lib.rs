@@ -28,8 +28,10 @@ mod order;
 mod pruner;
 mod serialization;
 mod utils;
-pub use grep::build_grep_config;
-pub use grep::{GrepConfig, GrepShow};
+pub use grep::{
+    GrepConfig, GrepPatterns, GrepShow, build_grep_config,
+    build_grep_config_from_patterns, combine_patterns,
+};
 pub use ingest::fileset::{FilesetInput, FilesetInputKind};
 pub use order::types::{ArrayBias, ArraySamplerStrategy};
 pub use order::{
@@ -72,7 +74,7 @@ pub fn headson(
     budgets: Budgets,
 ) -> Result<RenderOutput> {
     let mut prio = *priority_cfg;
-    if grep.regex.is_some() && !grep.weak {
+    if grep.has_strong() {
         // Avoid sampling away potential matches in strong grep mode.
         prio.array_max_items = usize::MAX;
     }

@@ -1,6 +1,6 @@
 use super::pruning_context::HeadsonPruningContext;
 use crate::grep::{
-    GrepShow, GrepState, compute_grep_state, reorder_priority_with_must_keep,
+    GrepShow, GrepState, compute_grep_state, reorder_priority_for_grep,
 };
 use crate::order::{NodeId, ObjectType};
 use crate::utils::measure::{OutputStats, count_output_stats};
@@ -45,7 +45,7 @@ pub fn find_largest_render_under_budgets(
     let header_budgeting = header_budgeting_policy(order_build, config);
     let measure_cfg = measure_config(order_build, config, header_budgeting);
     let min_k = min_k_for(&grep_state, grep);
-    let must_keep_slice = must_keep_slice(&grep_state, grep);
+    let must_keep_slice = guaranteed_nodes_slice(&grep_state, grep);
     let must_keep = must_keep_slice.map(|flags| {
         let free_allowance = effective_budgets_with_grep(
             order_build,
@@ -94,13 +94,13 @@ pub fn find_largest_render_under_budgets(
         grep,
         grep_state: &grep_state,
         must_keep: must_keep_slice,
+        root_is_fileset,
+        header_budgeting,
     };
     finalize_render_from_selection(
         order_build,
         config,
-        header_budgeting,
         selection,
-        root_is_fileset,
         &finalize_ctx,
     )
     .unwrap_or_default()
@@ -113,15 +113,15 @@ struct FinalizeContext<'a> {
     grep: &'a GrepConfig,
     grep_state: &'a Option<GrepState>,
     must_keep: Option<&'a [bool]>,
+    root_is_fileset: bool,
+    header_budgeting: HeadersBudgeting,
 }
 
 fn finalize_render_from_selection(
     order_build: &mut PriorityOrder,
     config: &RenderConfig,
-    header_budgeting: HeadersBudgeting,
     selection: PruningResult<NodeId>,
-    root_is_fileset: bool,
-    finalize_ctx: &FinalizeContext<'_>,
+    ctx: &FinalizeContext<'_>,
 ) -> Option<String> {
     let PruningResult {
         top_k: k_opt,
@@ -132,16 +132,16 @@ fn finalize_render_from_selection(
     let found_k = k_opt.is_some();
     let k = k_opt.unwrap_or(0);
     if should_short_circuit_after_selection(
-        &finalize_ctx.budgets,
-        finalize_ctx.must_keep,
-        root_is_fileset,
+        &ctx.budgets,
+        ctx.must_keep,
+        ctx.root_is_fileset,
         found_k,
         k,
     ) {
         return None;
     }
     inclusion_flags.fill(0);
-    let per_slot_caps_active = finalize_ctx.budgets.per_slot_active();
+    let per_slot_caps_active = ctx.budgets.per_slot_active();
 
     apply_selection(
         order_build,
@@ -152,8 +152,8 @@ fn finalize_render_from_selection(
     );
     include_strong_grep_must_keep(
         order_build,
-        finalize_ctx.grep,
-        finalize_ctx.grep_state,
+        ctx.grep,
+        ctx.grep_state,
         &mut inclusion_flags,
         render_set_id,
     );
@@ -162,19 +162,19 @@ fn finalize_render_from_selection(
             order_build,
             render_set_id,
             &mut inclusion_flags,
-            &finalize_ctx.budgets,
-            finalize_ctx.measure_cfg,
-            finalize_ctx.fileset_slots,
-            header_budgeting,
+            &ctx.budgets,
+            ctx.measure_cfg,
+            ctx.fileset_slots,
+            ctx.header_budgeting,
         );
     }
 
     if should_short_circuit_zero_line_slots(
-        &finalize_ctx.budgets,
-        finalize_ctx.fileset_slots,
+        &ctx.budgets,
+        ctx.fileset_slots,
         &inclusion_flags,
         render_set_id,
-        root_is_fileset,
+        ctx.root_is_fileset,
     ) {
         return None;
     }
@@ -185,7 +185,7 @@ fn finalize_render_from_selection(
             &inclusion_flags,
             render_set_id,
             config,
-            finalize_ctx.budgets,
+            ctx.budgets,
             k,
         );
     }
@@ -195,10 +195,7 @@ fn finalize_render_from_selection(
         &inclusion_flags,
         render_set_id,
         &crate::RenderConfig {
-            grep_highlight: config
-                .grep_highlight
-                .clone()
-                .or_else(|| finalize_ctx.grep.regex.clone()),
+            grep_highlight: ctx.grep.patterns.highlight().cloned(),
             ..config.clone()
         },
     ))
@@ -209,15 +206,23 @@ fn strong_fileset_grep_without_matches(
     state: &Option<GrepState>,
     root_is_fileset: bool,
 ) -> bool {
-    !grep.weak
-        && matches!(grep.show, GrepShow::Matching)
-        && grep.regex.is_some()
-        && state.is_none()
-        && root_is_fileset
+    if !grep.has_strong()
+        || !matches!(grep.show, GrepShow::Matching)
+        || !root_is_fileset
+    {
+        return false;
+    }
+    // No grep state means grep is disabled (shouldn't happen given has_strong check)
+    let Some(s) = state else {
+        return true;
+    };
+    // No strong matches means we should filter out everything
+    s.guaranteed_count == 0
 }
 
 fn is_strong_grep(grep: &GrepConfig, state: &Option<GrepState>) -> bool {
-    state.as_ref().is_some_and(GrepState::is_enabled) && !grep.weak
+    let count = state.as_ref().map(|s| s.guaranteed_count).unwrap_or(0);
+    grep.has_strong() && count > 0
 }
 
 fn apply_selection(
@@ -260,7 +265,7 @@ fn include_strong_grep_must_keep(
             order_build,
             inclusion_flags,
             render_set_id,
-            &state.must_keep,
+            &state.guaranteed_nodes,
         );
     }
 }
@@ -320,7 +325,7 @@ fn reorder_if_grep(
     state: &Option<GrepState>,
 ) {
     if let Some(s) = state {
-        reorder_priority_with_must_keep(order_build, &s.must_keep);
+        reorder_priority_for_grep(order_build, &s.matched_nodes);
     }
 }
 
@@ -334,15 +339,13 @@ fn filter_fileset_without_matches(
     grep: &GrepConfig,
     keep_fileset_children_for_tree: bool,
 ) {
-    if grep.weak {
+    if !grep.has_strong() {
         return;
     }
     let Some(s) = state.as_mut() else {
         return;
     };
-    if !s.is_enabled() {
-        return;
-    }
+    // Note: state being Some already guarantees there are matches (matched_nodes has entries)
     if matches!(grep.show, crate::grep::GrepShow::All) {
         return;
     }
@@ -365,26 +368,19 @@ fn filter_fileset_without_matches(
     };
 
     let mut keep_slots = vec![false; fileset_slots.len()];
-    for (idx, keep) in s.must_keep.iter().enumerate() {
+    // Mark slots based on matched nodes via slot_map
+    for (idx, keep) in s.guaranteed_nodes.iter().enumerate() {
         if !*keep {
             continue;
         }
         if let Some(slot) = slot_map.get(idx).copied().flatten() {
-            if let Some(flag) = keep_slots.get_mut(slot) {
-                *flag = true;
-            }
+            keep_slots[slot] = true;
         }
     }
-
-    if !keep_slots.iter().any(|k| *k) {
-        // Fallback: consider fileset children directly in case matches were only
-        // recorded on the file root.
-        for (slot, child) in fileset_slots.iter().enumerate() {
-            if s.must_keep.get(child.id.0).copied().unwrap_or(false) {
-                if let Some(flag) = keep_slots.get_mut(slot) {
-                    *flag = true;
-                }
-            }
+    // Also check file roots directly (handles case where slot_map doesn't cover them)
+    for (slot, child) in fileset_slots.iter().enumerate() {
+        if s.guaranteed_nodes.get(child.id.0).copied().unwrap_or(false) {
+            keep_slots[slot] = true;
         }
     }
 
@@ -418,14 +414,14 @@ fn filter_fileset_without_matches(
         }
     }
 
-    for (idx, keep) in s.must_keep.iter_mut().enumerate() {
+    for (idx, keep) in s.guaranteed_nodes.iter_mut().enumerate() {
         if let Some(slot) = slot_map.get(idx).copied().flatten() {
             if !keep_slots.get(slot).copied().unwrap_or(false) {
                 *keep = false;
             }
         }
     }
-    s.must_keep_count = s.must_keep.iter().filter(|b| **b).count();
+    s.guaranteed_count = s.guaranteed_nodes.iter().filter(|b| **b).count();
 }
 
 #[allow(
@@ -592,7 +588,7 @@ fn effective_budgets_with_grep(
     Some(measure_must_keep_with_slots(
         order_build,
         measure_cfg,
-        &s.must_keep,
+        &s.guaranteed_nodes,
         measure_chars,
         fileset_slots,
     ))
@@ -602,21 +598,20 @@ fn min_k_for(state: &Option<GrepState>, grep: &GrepConfig) -> usize {
     if is_strong_grep(grep, state) {
         state
             .as_ref()
-            .map(|s| s.must_keep_count.max(1))
+            .map(|s| s.guaranteed_count.max(1))
             .unwrap_or(1)
     } else {
         1
     }
 }
 
-fn must_keep_slice<'a>(
+fn guaranteed_nodes_slice<'a>(
     state: &'a Option<GrepState>,
     grep: &GrepConfig,
 ) -> Option<&'a [bool]> {
-    state
-        .as_ref()
-        .filter(|_| !grep.weak)
-        .and_then(|s| s.is_enabled().then_some(s.must_keep.as_slice()))
+    state.as_ref().filter(|_| grep.has_strong()).and_then(|s| {
+        (s.guaranteed_count > 0).then_some(s.guaranteed_nodes.as_slice())
+    })
 }
 
 #[allow(

@@ -67,19 +67,25 @@ In multi-file mode, inputs are ordered so frequently and recently touched files 
 
 Using Cargo:
 
-    cargo install headson
+```sh
+cargo install headson
+```
 
 > Note: the package is called `headson`, but the installed CLI command is `hson`. All examples below use `hson ...`.
 
 From source:
 
-    cargo build --release
-    target/release/hson --help
+```sh
+cargo build --release
+target/release/hson --help
+```
 
 
 ## Usage
 
-    hson [FLAGS] [INPUT...]
+```text
+hson [FLAGS] [INPUT...]
+```
 
 - INPUT (optional, repeatable): file path(s). If omitted, reads from stdin. Multiple input files are supported.
 - Prints the preview to stdout. On parse errors, exits non‑zero and prints an error to stderr.
@@ -187,16 +193,18 @@ Notes:
 
 #### Grep mode
 
-Use `--grep <REGEX>` to guarantee inclusion of values/keys/lines matching the regex (ripgrep-style). Matches plus their ancestors are “free” against budgets; everything else must fit the remaining headroom.
+Use `--grep <REGEX>` to guarantee inclusion of values/keys/lines matching the regex (ripgrep-style). Matches plus their ancestors are "free" against budgets; everything else must fit the remaining headroom.
 
 - Matching: values/lines are checked; object keys match too. Filenames do not match by themselves (a file must have a matching value/line/key).
 - Colors: only the matching text is highlighted; syntax colors are suppressed in grep mode. Disable color entirely with `--no-color`.
-- Weak grep: `--weak-grep <REGEX>` biases priority toward matches but does not guarantee inclusion, expand budgets, or filter files. Budgets stay exact and matches can still be pruned if they do not fit. Use `--iweak-grep <REGEX>` for case-insensitive weak grep.
+- Multiple patterns: all grep flags are repeatable. Multiple patterns combine with OR semantics—values matching any pattern are included/highlighted. Example: `--grep foo --grep bar` matches "foo" or "bar".
+- Case-insensitive: use `--igrep <REGEX>` for case-insensitive matching. Can be combined with `--grep`: `--grep Foo --igrep bar` matches "Foo" (exact case) or "bar"/"BAR"/"Bar" (any case).
+- Weak grep: `--weak-grep <REGEX>` biases priority toward matches but does not guarantee inclusion, expand budgets, or filter files. Budgets stay exact and matches can still be pruned if they do not fit. Use `--weak-igrep <REGEX>` for case-insensitive weak grep. Weak grep can be combined with strong grep: strong matches are guaranteed while weak matches are prioritized.
 - Multi-file mode (strong `--grep` only):
   - Default (`--grep-show=matching`): files without matches are dropped from the render and summary. If no files match at all, the output is empty and the CLI prints a warning to stderr.
   - `--grep-show=all`: keep non-matching files in the render; only matching files are highlighted.
   - Headers respect `--no-header` as usual.
-- Mutual exclusion: `--grep-show` requires `--grep` or `--igrep` and cannot be used with `--weak-grep` or `--iweak-grep`. All four grep variants (`--grep`, `--igrep`, `--weak-grep`, `--iweak-grep`) are mutually exclusive.
+- `--grep-show` requires `--grep` or `--igrep`.
 - Context: there are no explicit `-C/-B/-A` style flags; per-file budgets decide how much surrounding structure/lines can stay alongside the must-keep matches.
 - Budgets: matches and ancestors always render; remaining budget determines what else can appear. Extremely tight budgets may show only the must-keep path.
 - Text/source code: works with `-i text` and source code files; when using `--format auto`, file extensions still decide ingest/rendering.
@@ -237,13 +245,17 @@ Use `--tree` to render multi-file output as a directory tree (like `tree`) with 
 
 - Single file (auto):
 
-      hson -c 200 notes.txt
+  ```sh
+  hson -c 200 notes.txt
+  ```
 
 - Force Text ingest/output (useful when mixing with other extensions, or when the extension suggests JSON/YAML):
 
-      hson -c 200 -i text -f text notes.txt
-      # Force text ingest even if the file looks like JSON
-      hson -i text notes.json
+  ```sh
+  hson -c 200 -i text -f text notes.txt
+  # Force text ingest even if the file looks like JSON
+  hson -i text notes.json
+  ```
 
 - Styles on Text:
   - default: omission as a standalone `…` line.
@@ -262,7 +274,9 @@ For source code files, headson uses an indentation-aware heuristic to build an o
 
 Show help:
 
-    hson --help
+```sh
+hson --help
+```
 
 Note: flags align with head/tail conventions (`-c/--bytes`, `-C/--global-bytes`).
 

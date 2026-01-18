@@ -11,7 +11,7 @@ use clap_complete::Shell;
     about = "Get a small but useful preview of JSON or YAML"
 )]
 #[clap(group = clap::ArgGroup::new("strong_grep").args(["grep", "igrep"]).multiple(true))]
-#[clap(group = clap::ArgGroup::new("weak_grep_group").args(["weak_grep", "iweak_grep"]).multiple(true))]
+#[clap(group = clap::ArgGroup::new("weak_grep_group").args(["weak_grep", "weak_igrep"]).multiple(true))]
 pub struct Cli {
     #[arg(short = 'c', long = "bytes")]
     pub bytes: Option<usize>,
@@ -178,40 +178,35 @@ pub struct Cli {
         long = "grep",
         value_name = "REGEX",
         action = ArgAction::Append,
-        conflicts_with_all = ["weak_grep", "iweak_grep"],
-        help = "Guarantee inclusion of values (and their ancestors) matching this regex; budgets apply to everything else. Can be repeated."
+        help = "Guarantee inclusion of values (and their ancestors) matching this regex; budgets apply to everything else. Repeatable; multiple patterns match with OR."
     )]
     pub grep: Vec<String>,
     #[arg(
         long = "igrep",
         value_name = "REGEX",
         action = ArgAction::Append,
-        conflicts_with_all = ["weak_grep", "iweak_grep"],
-        help = "Case-insensitive variant of --grep. Can be repeated and combined with --grep."
+        help = "Case-insensitive --grep. Repeatable and combinable with --grep (OR)."
     )]
     pub igrep: Vec<String>,
     #[arg(
         long = "weak-grep",
         value_name = "REGEX",
         action = ArgAction::Append,
-        conflicts_with_all = ["grep", "igrep"],
-        help = "Bias priority toward regex matches without guaranteeing inclusion or expanding budgets. Can be repeated."
+        help = "Bias priority toward matches without guaranteeing inclusion. Repeatable; multiple patterns match with OR. Can combine with --grep/--igrep."
     )]
     pub weak_grep: Vec<String>,
     #[arg(
-        long = "iweak-grep",
+        long = "weak-igrep",
         value_name = "REGEX",
         action = ArgAction::Append,
-        conflicts_with_all = ["grep", "igrep"],
-        help = "Case-insensitive variant of --weak-grep. Can be repeated and combined with --weak-grep."
+        help = "Case-insensitive --weak-grep. Repeatable and combinable with --weak-grep (OR). Can combine with --grep/--igrep."
     )]
-    pub iweak_grep: Vec<String>,
+    pub weak_igrep: Vec<String>,
     #[arg(
         long = "grep-show",
         value_enum,
         default_value_t = GrepShowArg::Matching,
         requires = "strong_grep",
-        conflicts_with_all = ["weak_grep", "iweak_grep"],
         help = "When using --grep or --igrep, control fileset inclusion: matching (default) | all"
     )]
     pub grep_show: GrepShowArg,
