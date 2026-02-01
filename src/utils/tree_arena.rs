@@ -39,6 +39,8 @@ pub struct JsonTreeNode {
     pub prefers_parent_line: bool,
     // For filesets: marks entries that should render headers only (empty body).
     pub fileset_suppressed: bool,
+    // True for the synthetic root array node wrapping JSONL lines.
+    pub is_jsonl_root: bool,
 }
 
 impl Default for JsonTreeNode {
@@ -58,6 +60,7 @@ impl Default for JsonTreeNode {
             array_bias_override: None,
             prefers_parent_line: false,
             fileset_suppressed: false,
+            is_jsonl_root: false,
         }
     }
 }

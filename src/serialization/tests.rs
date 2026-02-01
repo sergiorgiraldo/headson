@@ -292,6 +292,7 @@ fn mk_gap_ctx() -> super::templates::ArrayCtx<'static> {
         omitted_at_start: false,
         source_hint: None,
         code_highlight: None,
+        is_jsonl_root: false,
     }
 }
 

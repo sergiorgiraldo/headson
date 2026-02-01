@@ -844,6 +844,13 @@ pub fn build_order(
             code_lines.insert(*pq_id, Arc::clone(lines));
         }
     }
+    for (arena_idx, node) in arena.nodes.iter().enumerate() {
+        if node.is_jsonl_root {
+            if let Some(Some(pq_id)) = arena_to_pq.get(arena_idx) {
+                object_type[*pq_id] = ObjectType::JsonlRoot;
+            }
+        }
+    }
     Ok(PriorityOrder {
         metrics,
         nodes,

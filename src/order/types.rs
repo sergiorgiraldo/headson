@@ -76,6 +76,7 @@ pub enum NodeKind {
 pub enum ObjectType {
     Object,
     Fileset,
+    JsonlRoot,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

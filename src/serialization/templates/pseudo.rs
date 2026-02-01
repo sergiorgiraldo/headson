@@ -61,7 +61,56 @@ fn render_array_nonempty(ctx: &ArrayCtx<'_>, out: &mut Out<'_>) {
     });
 }
 
+// JSONL rendering is intentionally duplicated across js/pseudo templates for simplicity.
+// See also: push_jsonl_gap and render_jsonl_root in js.rs.
+fn push_jsonl_gap(
+    out: &mut Out<'_>,
+    ctx: &ArrayCtx<'_>,
+    prev_index: Option<usize>,
+    orig_index: usize,
+) {
+    if let Some(prev) = prev_index {
+        if orig_index > prev.saturating_add(1) {
+            out.push_indent(ctx.depth);
+            out.push_omission();
+            out.push_newline();
+        }
+    } else if ctx.omitted_at_start && ctx.omitted > 0 {
+        out.push_indent(ctx.depth);
+        out.push_omission();
+        out.push_newline();
+    }
+}
+
+fn render_jsonl_root(ctx: &ArrayCtx<'_>, out: &mut Out<'_>) {
+    let max_line = ctx.children.iter().map(|(idx, _)| *idx).max().unwrap_or(0);
+    let width = format!("{max_line}").len();
+    let mut prev_index: Option<usize> = None;
+    for (i, (orig_index, (_kind, item))) in ctx.children.iter().enumerate() {
+        push_jsonl_gap(out, ctx, prev_index, *orig_index);
+        out.push_str(&format!("{orig_index:>width$}: "));
+        out.push_str(item);
+        if i + 1 < ctx.children_len {
+            out.push_newline();
+        }
+        prev_index = Some(*orig_index);
+    }
+    if !ctx.omitted_at_start && ctx.omitted > 0 {
+        out.push_newline();
+        out.push_indent(ctx.depth);
+        out.push_omission();
+    }
+}
+
 pub(super) fn render_array(ctx: &ArrayCtx<'_>, out: &mut Out<'_>) {
+    if ctx.is_jsonl_root && !out.is_compact_mode() {
+        if ctx.children_len == 0 && ctx.omitted > 0 {
+            out.push_omission();
+        } else if ctx.children_len > 0 {
+            render_jsonl_root(ctx, out);
+        }
+        return;
+    }
     if ctx.children_len == 0 {
         render_array_empty(ctx, out);
     } else {
