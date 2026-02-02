@@ -67,7 +67,7 @@ pub(crate) fn build_json_tree_arena_from_many(
 }
 
 /// Collect (byte_start, 1-based line number) for every non-empty line.
-fn jsonl_line_offsets(text: &str) -> Vec<(usize, usize)> {
+pub(crate) fn jsonl_line_offsets(text: &str) -> Vec<(usize, usize)> {
     let mut offsets = Vec::new();
     let mut pos = 0usize;
     for (line_idx, raw_line) in text.split('\n').enumerate() {
@@ -88,12 +88,17 @@ fn jsonl_line_offsets(text: &str) -> Vec<(usize, usize)> {
 ///
 /// Lines are sampled using the same strategy as JSON arrays (controlled by
 /// `PriorityConfig::array_max_items` and `array_sampler`), so only a subset
-/// of lines is actually parsed for large inputs.
+/// of lines is actually parsed for large inputs. When a `must_include`
+/// predicate is provided, matching lines are always kept regardless of the
+/// sampling cap.
 pub fn parse_jsonl_one(
     bytes: &[u8],
     cfg: &PriorityConfig,
+    must_include: impl Fn(usize) -> bool,
 ) -> Result<TreeArena> {
-    use crate::ingest::sampling::{ArraySamplerKind, choose_indices};
+    use crate::ingest::sampling::{
+        ArraySamplerKind, choose_indices, merge_required,
+    };
 
     let text = std::str::from_utf8(bytes)
         .map_err(|e| anyhow::anyhow!("JSONL input is not valid UTF-8: {e}"))?;
@@ -101,8 +106,8 @@ pub fn parse_jsonl_one(
     let line_offsets = jsonl_line_offsets(text);
     let total = line_offsets.len();
     let sampler_kind: ArraySamplerKind = cfg.array_sampler.into();
-    let kept_indices =
-        choose_indices(sampler_kind, total, cfg.array_max_items);
+    let sampled = choose_indices(sampler_kind, total, cfg.array_max_items);
+    let kept_indices = merge_required(sampled, total, &must_include);
 
     let builder = JsonTreeBuilder::new(cfg.array_max_items, sampler_kind);
     let root_id = builder.push_default();
@@ -136,14 +141,6 @@ pub fn parse_jsonl_one(
     }
 
     Ok(arena)
-}
-
-/// Parse JSONL from a byte slice (for fileset use).
-pub(crate) fn build_jsonl_tree_arena_from_slice(
-    bytes: &[u8],
-    cfg: &PriorityConfig,
-) -> Result<TreeArena> {
-    parse_jsonl_one(bytes, cfg)
 }
 
 /// Convenience functions for the JSON ingest path.
