@@ -544,3 +544,114 @@ fn code_lines_are_hard_truncated_end_to_end() {
         "expected hard cap at ~150 graphemes (+ ellipsis); got {graphemes}"
     );
 }
+
+#[test]
+fn line_numbers_flag_shows_numbers_for_text_input() {
+    let out = common::run_cli(
+        &[
+            "--no-color",
+            "--line-numbers",
+            "-n",
+            "1000000",
+            "-f",
+            "text",
+            "-i",
+            "text",
+            "tests/fixtures/code/sample.py",
+        ],
+        None,
+    );
+    let lines: Vec<&str> = out.stdout.lines().collect();
+    // Every non-empty line should start with a line number prefix.
+    for line in &lines {
+        if line.is_empty() {
+            continue;
+        }
+        assert!(
+            is_numbered_line(line),
+            "expected all lines to be numbered, got: {line:?}"
+        );
+    }
+    // The first line should be numbered 1 (possibly with leading spaces for alignment).
+    assert!(
+        lines
+            .first()
+            .map(|l| l.trim_start().starts_with("1:"))
+            .unwrap_or(false),
+        "expected first line to start with '1:' (after trimming), got: {:?}",
+        lines.first()
+    );
+}
+
+#[test]
+fn line_numbers_flag_without_flag_has_no_numbers_for_txt_file() {
+    let out = common::run_cli(
+        &[
+            "--no-color",
+            "-n",
+            "1000000",
+            "-f",
+            "text",
+            "-i",
+            "text",
+            "tests/fixtures/code/sample.py",
+        ],
+        None,
+    );
+    // Without --line-numbers, text template should not prefix lines with numbers.
+    for line in out.stdout.lines() {
+        assert!(
+            !is_numbered_line(line),
+            "expected no line numbers without --line-numbers flag, got: {line:?}"
+        );
+    }
+}
+
+#[test]
+fn line_numbers_flag_preserves_original_indices_on_truncation() {
+    // With a tight budget, some lines are omitted; remaining lines should
+    // still show their original 1-based line numbers (not renumbered).
+    let out = common::run_cli(
+        &[
+            "--no-color",
+            "--line-numbers",
+            "-n",
+            "5",
+            "-f",
+            "text",
+            "-i",
+            "text",
+            "tests/fixtures/code/sample.py",
+        ],
+        None,
+    );
+    let numbered_lines: Vec<&str> = out
+        .stdout
+        .lines()
+        .filter(|l| is_numbered_line(l))
+        .collect();
+    assert!(
+        !numbered_lines.is_empty(),
+        "expected at least one numbered line"
+    );
+    // Collect the line numbers shown and verify they are not all consecutive
+    // (i.e., some original lines were skipped, proving original indices are kept).
+    let numbers: Vec<usize> = numbered_lines
+        .iter()
+        .filter_map(|l| {
+            l.trim_start()
+                .split_once(':')
+                .and_then(|(n, _)| n.trim().parse::<usize>().ok())
+        })
+        .collect();
+    // For a file longer than 5 lines, we expect the last shown line number
+    // to be greater than the count of numbered lines (indices are original).
+    if numbers.len() > 1 {
+        let max_num = *numbers.iter().max().unwrap();
+        assert!(
+            max_num > numbers.len(),
+            "expected original (non-renumbered) line indices; max={max_num}, count={}",
+            numbers.len()
+        );
+    }
+}

@@ -25,6 +25,7 @@ fn colored_and_plain_outputs_should_match_after_stripping() {
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
     let cfg_color = headson::RenderConfig {
         color_enabled: true,

@@ -51,6 +51,8 @@ pub struct RenderConfig {
     pub count_fileset_headers_in_budgets: bool,
     // Optional regex for highlighting grep matches during rendering (color modes only).
     pub grep_highlight: Option<regex::Regex>,
+    // When true, force line numbers for all templates that support them (text, code).
+    pub force_line_numbers: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

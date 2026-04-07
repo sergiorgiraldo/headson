@@ -158,6 +158,7 @@ hson -n 20 src/main.py
 - `-m, --compact`: no indentation, no spaces, no newlines
 - `--no-newline`: single line output
 - `--no-header`: suppress per-file section headers (useful when embedding output in scripts)
+- `--line-numbers`: show line numbers in the output for any input type (text files, logs, etc.). Line numbers reflect original positions so gaps reveal omitted lines. Source code files already show line numbers automatically.
 - `--tree`: render multi-file previews as a directory tree with inline previews (keeps code line numbers); uses per-file auto formatting.
 - `--no-space`: no space after `:` in objects
 - `--indent <STR>`: indentation unit (default: two spaces)
@@ -271,6 +272,7 @@ For source code files, headson uses an indentation-aware heuristic to build an o
 - Lines are kept atomic: omission markers never split a line in half.
 - Under tight budgets, it tends to keep block-introducing lines (like function/class headers) and omit less relevant blocks from the middle.
 - With colors enabled, you also get syntax highlighting and line numbers.
+- Non-code files (`.txt`, logs, etc.) do not show line numbers by default; pass `--line-numbers` to enable them.
 
 Show help:
 

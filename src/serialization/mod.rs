@@ -50,7 +50,8 @@ impl<'a> RenderRun<'a> {
 
     fn line_number_width(&self) -> Option<usize> {
         let should_measure_line_numbers =
-            matches!(self.config.template, crate::OutputTemplate::Code)
+            self.config.force_line_numbers
+                || matches!(self.config.template, crate::OutputTemplate::Code)
                 || (matches!(
                     self.config.template,
                     crate::OutputTemplate::Auto

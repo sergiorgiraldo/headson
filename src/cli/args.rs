@@ -148,6 +148,14 @@ pub struct Cli {
     )]
     pub indent: String,
     #[arg(
+        long = "line-numbers",
+        action = ArgAction::SetTrue,
+        default_value_t = false,
+        help = "Show line numbers in the output for any input type",
+        help_heading = "Output Format"
+    )]
+    pub line_numbers: bool,
+    #[arg(
         long = "color",
         action = ArgAction::SetTrue,
         conflicts_with = "no_color",
@@ -303,6 +311,7 @@ pub fn get_render_config_from(cli: &Cli) -> headson::RenderConfig {
         fileset_tree,
         count_fileset_headers_in_budgets,
         grep_highlight: None,
+        force_line_numbers: cli.line_numbers,
     }
 }
 

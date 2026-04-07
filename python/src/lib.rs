@@ -41,6 +41,7 @@ fn render_config_with_sampler(
     format: &str,
     style: &str,
     sampler: ArraySamplerStrategy,
+    line_numbers: bool,
 ) -> Result<RenderConfig> {
     let s = to_style(style)?;
     let t = map_output_template(format, s)?;
@@ -69,6 +70,7 @@ fn render_config_with_sampler(
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: line_numbers,
     })
 }
 
@@ -104,7 +106,7 @@ fn to_pyerr(e: anyhow::Error) -> PyErr {
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)] // Python API surface requires these knobs
-#[pyo3(signature = (text, *, format="auto", style="default", byte_budget=None, skew="balanced", input_format="json", grep=None, weak_grep=None))]
+#[pyo3(signature = (text, *, format="auto", style="default", byte_budget=None, skew="balanced", input_format="json", grep=None, weak_grep=None, line_numbers=false))]
 /// Summarize a single logical input buffer. Fileset/tree output is CLI-only.
 fn summarize(
     py: Python<'_>,
@@ -116,9 +118,10 @@ fn summarize(
     input_format: &str,
     grep: Option<&str>,
     weak_grep: Option<&str>,
+    line_numbers: bool,
 ) -> PyResult<String> {
     let sampler = parse_skew(skew).map_err(to_pyerr)?;
-    let cfg = render_config_with_sampler(format, style, sampler)
+    let cfg = render_config_with_sampler(format, style, sampler, line_numbers)
         .map_err(to_pyerr)?;
     let budget = byte_budget.unwrap_or(500);
     let EffectiveBudgets {

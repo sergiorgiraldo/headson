@@ -92,6 +92,9 @@ pub struct Out<'a> {
     role_colors_enabled: bool,
     style: crate::serialization::types::Style,
     line_number_width: Option<usize>,
+    // True when line numbers were explicitly requested by the user (--line-numbers),
+    // as opposed to being inferred from code template or fileset heuristics.
+    force_line_numbers: bool,
     recorder: Option<SlotStatsRecorder>,
     current_slot: Option<usize>,
 }
@@ -122,6 +125,7 @@ impl<'a> Out<'a> {
             role_colors_enabled,
             style: config.style,
             line_number_width,
+            force_line_numbers: config.force_line_numbers,
             recorder,
             current_slot: None,
         }
@@ -220,6 +224,13 @@ impl<'a> Out<'a> {
 
     pub fn line_number_width(&self) -> Option<usize> {
         self.line_number_width
+    }
+
+    /// True only when line numbers were explicitly requested via `--line-numbers`
+    /// (i.e., `force_line_numbers` in `RenderConfig`). Use this in templates that
+    /// should not inherit line numbers from code/fileset heuristics.
+    pub fn force_line_numbers(&self) -> bool {
+        self.force_line_numbers
     }
 
     pub fn colors_enabled(&self) -> bool {

@@ -23,6 +23,7 @@ fn yaml_coloring_applies_and_strips_to_plain() {
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
     let cfg_color = RenderConfig {
         color_enabled: true,
