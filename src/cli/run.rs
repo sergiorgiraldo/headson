@@ -597,14 +597,37 @@ fn render_single_entry(
         .pop()
         .expect("single-entry render expects one ingested input");
     let lower = name.to_ascii_lowercase();
-    let chosen_input = select_input_format(cli, &lower);
-    let cfg_for_render = build_single_render_config(
+    let mut chosen_input = select_input_format(cli, &lower);
+    // When --line-numbers is requested and no explicit input/output format was
+    // given, ingest as raw text so every line gets a number regardless of file
+    // extension (YAML, JSON, etc. would otherwise use structured templates that
+    // don't emit line numbers).
+    if render_cfg.force_line_numbers
+        && cli.input_format.is_none()
+        && matches!(cli.format, OutputFormat::Auto)
+        && !matches!(chosen_input, InputFormat::Text)
+    {
+        chosen_input = InputFormat::Text;
+    }
+    let mut cfg_for_render = build_single_render_config(
         cli,
         render_cfg,
         &lower,
         &name,
         chosen_input,
     );
+    // build_single_render_config derives the template from the file extension,
+    // which may still be Yaml/Json after we switched to text ingestion above.
+    // Override to Text so the line-number rendering path is used.
+    if render_cfg.force_line_numbers
+        && matches!(chosen_input, InputFormat::Text)
+        && !matches!(
+            cfg_for_render.template,
+            headson::OutputTemplate::Text | headson::OutputTemplate::Code
+        )
+    {
+        cfg_for_render.template = headson::OutputTemplate::Text;
+    }
     let (cfg_for_render, prio, budgets) =
         build_effective_configs(cli, cfg_for_render, 1usize);
     let (out, mut fallback_warnings) = render_single_input(
