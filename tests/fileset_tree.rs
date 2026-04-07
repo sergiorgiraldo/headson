@@ -41,6 +41,7 @@ fn tree_cfg() -> headson::RenderConfig {
         fileset_tree: true,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     }
 }
 

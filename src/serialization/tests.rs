@@ -35,6 +35,7 @@ fn render_cfg(
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     }
 }
 
@@ -599,6 +600,7 @@ fn fileset_tree_headers_free_keep_slot_stats_on_body_only() {
         fileset_tree: true,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
 
     let (rendered, slot_stats) = render_from_render_set_with_slots(
@@ -681,6 +683,7 @@ fn fileset_tree_headers_free_scaffold_does_not_change_slot_stats() {
         fileset_tree: true,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
 
     let render_with_scaffold = |show_headers: bool| {
@@ -772,6 +775,7 @@ fn fileset_sections_slot_stats_respect_header_budgeting() {
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
 
     let render_sections = |count_headers: bool| {
@@ -865,6 +869,7 @@ fn slot_stats_match_render_for_code_and_text() {
         fileset_tree: false,
         count_fileset_headers_in_budgets: true,
         grep_highlight: None,
+        force_line_numbers: false,
     };
 
     let render_with =

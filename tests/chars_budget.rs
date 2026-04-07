@@ -70,6 +70,7 @@ fn colored_vs_plain_match_after_stripping_under_char_budget() {
         fileset_tree: false,
         count_fileset_headers_in_budgets: false,
         grep_highlight: None,
+        force_line_numbers: false,
     };
     let cfg_color = headson::RenderConfig {
         color_enabled: true,

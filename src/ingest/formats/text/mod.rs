@@ -501,6 +501,7 @@ mod tests {
             fileset_tree: false,
             count_fileset_headers_in_budgets: false,
             grep_highlight: None,
+            force_line_numbers: false,
         };
         let prio = PriorityConfig::new(100, 100);
         (cfg, prio)
