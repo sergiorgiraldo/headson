@@ -27,9 +27,11 @@ pub(super) fn render_array(ctx: &ArrayCtx<'_>, out: &mut Out<'_>) {
         last_was_omission = true;
     }
     for (orig_index, (_, item)) in ctx.children.iter() {
-        if let Some(w) = out.line_number_width() {
-            let n = orig_index.saturating_add(1);
-            out.push_str(&format!("{n:>w$}: "));
+        if out.force_line_numbers() {
+            if let Some(w) = out.line_number_width() {
+                let n = orig_index.saturating_add(1);
+                out.push_str(&format!("{n:>w$}: "));
+            }
         }
         out.push_str(item);
         out.push_newline();
